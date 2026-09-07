@@ -1,0 +1,3 @@
+# Server storage directory
+# This directory stores uploaded files in development.
+# It is gitignored and should not be committed.
