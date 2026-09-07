@@ -20,6 +20,45 @@ const generateBatchCode = () => {
 };
 
 /**
+ * Parse flexible date values from Excel (strings, numbers, timestamps).
+ * Supports: DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY, YYYY-MM-DD, Excel serial numbers, Date objects.
+ */
+const parseFlexibleDate = (val) => {
+  if (!val) return null;
+  if (val instanceof Date && !isNaN(val.getTime())) return val;
+  if (typeof val === 'number') {
+    // Excel serial date (days since Dec 30 1899)
+    return new Date(Math.round((val - 25569) * 86400 * 1000));
+  }
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // Check DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY
+  const dmyMatch = str.match(/^(\d{1,2})[\.\/\-](\d{1,2})[\.\/\-](\d{2,4})$/);
+  if (dmyMatch) {
+    let day = parseInt(dmyMatch[1], 10);
+    let month = parseInt(dmyMatch[2], 10) - 1; // 0-indexed in JS
+    let year = parseInt(dmyMatch[3], 10);
+    if (year < 100) year += 2000;
+    const d = new Date(Date.UTC(year, month, day));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  // Check YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
+  const ymdMatch = str.match(/^(\d{4})[\.\/\-](\d{1,2})[\.\/\-](\d{1,2})$/);
+  if (ymdMatch) {
+    let year = parseInt(ymdMatch[1], 10);
+    let month = parseInt(ymdMatch[2], 10) - 1;
+    let day = parseInt(ymdMatch[3], 10);
+    const d = new Date(Date.UTC(year, month, day));
+    if (!isNaN(d.getTime())) return d;
+  }
+
+  const standard = new Date(str);
+  return isNaN(standard.getTime()) ? null : standard;
+};
+
+/**
  * Map natural document type descriptions to standard system folder codes.
  */
 const mapDocumentTypeToFolderCode = (docType) => {
@@ -284,9 +323,9 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
           uniqueRef,
           customerName: row.customerName || null,
           folderTypeId: folderType._id,
-          dispatchDate: row.dispatchDate ? new Date(row.dispatchDate) : null,
+          dispatchDate: parseFlexibleDate(row.dispatchDate),
           podStatus: row.podStatus || null,
-          podDate: row.podDate ? new Date(row.podDate) : null,
+          podDate: parseFlexibleDate(row.podDate),
           trackingNumber: row.trackingNumber || null,
           remark: row.remark || null,
           filePath: stored.relativePath,
