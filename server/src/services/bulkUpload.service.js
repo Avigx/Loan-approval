@@ -44,6 +44,21 @@ const parseFlexibleDate = (val) => {
     if (!isNaN(d.getTime())) return d;
   }
 
+  // Check DD-MMM-YYYY (e.g. 21-Jul-2026, 29-Aug-2026)
+  const monthMap = { jan: 0, feb: 1, mar: 2, apr: 3, may: 4, jun: 5, jul: 6, aug: 7, sep: 8, oct: 9, nov: 10, dec: 11 };
+  const dMonYMatch = str.match(/^(\d{1,2})[\.\/\-\s]([A-Za-z]{3,9})[\.\/\-\s](\d{2,4})$/);
+  if (dMonYMatch) {
+    let day = parseInt(dMonYMatch[1], 10);
+    let monKey = dMonYMatch[2].toLowerCase().slice(0, 3);
+    if (monthMap[monKey] !== undefined) {
+      let month = monthMap[monKey];
+      let year = parseInt(dMonYMatch[3], 10);
+      if (year < 100) year += 2000;
+      const d = new Date(Date.UTC(year, month, day));
+      if (!isNaN(d.getTime())) return d;
+    }
+  }
+
   // Check YYYY-MM-DD, YYYY/MM/DD, YYYY.MM.DD
   const ymdMatch = str.match(/^(\d{4})[\.\/\-](\d{1,2})[\.\/\-](\d{1,2})$/);
   if (ymdMatch) {
