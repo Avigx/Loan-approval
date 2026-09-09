@@ -217,6 +217,51 @@ const getStats = async (req, res, next) => {
   }
 };
 
+/**
+ * DELETE /api/documents/:id
+ * Permanently delete a document. Restricted to admin roles. Tenant-scoped.
+ */
+const deleteDocument = async (req, res, next) => {
+  try {
+    const filter = { _id: req.params.id, ...scopeToClient(req) };
+    const document = await Document.findOne(filter);
+
+    if (!document) {
+      return res.status(404).json({ error: 'Document not found' });
+    }
+
+    // Delete the physical file from storage (best-effort; don't fail if already gone)
+    try {
+      await storageService.deleteFile(document.filePath);
+    } catch (fileErr) {
+      console.error(`Failed to delete file ${document.filePath}:`, fileErr.message);
+    }
+
+    // Delete the MongoDB document
+    await Document.deleteOne({ _id: document._id });
+
+    // Audit log
+    writeAuditLog({
+      action: 'delete',
+      userId: req.user.id,
+      entityType: 'Document',
+      entityId: document._id,
+      clientId: req.user.clientId,
+      ipAddress: getClientIp(req),
+      details: {
+        loanNumber: document.loanNumber,
+        uniqueRef: document.uniqueRef,
+        customerName: document.customerName,
+        fileType: document.fileType,
+      },
+    });
+
+    res.json({ message: 'Document deleted successfully' });
+  } catch (error) {
+    next(error);
+  }
+};
+
 function getContentType(fileType) {
   const types = {
     pdf: 'application/pdf',
@@ -229,4 +274,4 @@ function getContentType(fileType) {
   return types[fileType] || 'application/octet-stream';
 }
 
-module.exports = { searchDocuments, viewDocument, downloadDocument, getStats };
+module.exports = { searchDocuments, viewDocument, downloadDocument, deleteDocument, getStats };

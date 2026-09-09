@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
-import { FileText, Lock, Mail, ArrowRight } from 'lucide-react';
+import { FileText, Lock, Mail, ArrowRight, Loader2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 const LoginPage = () => {
@@ -26,56 +26,87 @@ const LoginPage = () => {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-surface-900 via-primary-950 to-surface-900 flex items-center justify-center p-4">
-      {/* Background decoration */}
-      <div className="absolute inset-0 overflow-hidden">
-        <div className="absolute -top-40 -right-40 w-80 h-80 bg-primary-500/10 rounded-full blur-3xl" />
-        <div className="absolute -bottom-40 -left-40 w-80 h-80 bg-primary-600/10 rounded-full blur-3xl" />
+    <div className="min-h-screen bg-slate-900 flex">
+      {/* Left panel — branding */}
+      <div className="hidden lg:flex lg:w-1/2 bg-primary-900 items-center justify-center p-12 relative overflow-hidden">
+        <div className="absolute inset-0 bg-gradient-to-br from-primary-800/50 to-slate-900/80" />
+        <div className="relative z-10 max-w-md text-center">
+          <div className="w-14 h-14 mx-auto rounded-lg bg-white/10 flex items-center justify-center mb-8 border border-white/10">
+            <FileText className="w-7 h-7 text-white" />
+          </div>
+          <h2 className="text-3xl font-bold text-white mb-3">Legal Notice DMS</h2>
+          <p className="text-slate-300 text-sm leading-relaxed">
+            Enterprise document management for legal departments, banks, and financial institutions.
+            Manage notices, proof-of-delivery, and courier tracking across your organization.
+          </p>
+          <div className="mt-10 grid grid-cols-3 gap-4 text-center">
+            <div className="p-3 rounded-md bg-white/5 border border-white/10">
+              <p className="text-lg font-semibold text-white">Secure</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">RBAC & Multi-tenant</p>
+            </div>
+            <div className="p-3 rounded-md bg-white/5 border border-white/10">
+              <p className="text-lg font-semibold text-white">Audit</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Complete trail</p>
+            </div>
+            <div className="p-3 rounded-md bg-white/5 border border-white/10">
+              <p className="text-lg font-semibold text-white">Bulk</p>
+              <p className="text-[11px] text-slate-400 mt-0.5">Upload & match</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <div className="relative w-full max-w-md">
-        {/* Logo */}
-        <div className="text-center mb-8">
-          <div className="w-16 h-16 mx-auto rounded-2xl bg-gradient-to-br from-primary-500 to-primary-700 flex items-center justify-center shadow-xl shadow-primary-500/30 mb-4">
-            <FileText className="w-8 h-8 text-white" />
+      {/* Right panel — form */}
+      <div className="flex-1 flex items-center justify-center p-6 sm:p-12">
+        <div className="w-full max-w-sm">
+          {/* Mobile logo */}
+          <div className="lg:hidden text-center mb-8">
+            <div className="w-12 h-12 mx-auto rounded-lg bg-primary-800 flex items-center justify-center mb-3">
+              <FileText className="w-6 h-6 text-white" />
+            </div>
+            <h1 className="text-xl font-semibold text-white">Legal Notice DMS</h1>
           </div>
-          <h1 className="text-3xl font-bold text-white mb-1">Legal Notice DMS</h1>
-          <p className="text-surface-400 text-sm">Document Management System</p>
-        </div>
 
-        {/* Login Card */}
-        <div className="bg-white/10 backdrop-blur-xl rounded-2xl border border-white/10 p-8 shadow-2xl">
-          <h2 className="text-xl font-semibold text-white mb-6">Sign in to your account</h2>
+          <div>
+            <h2 className="text-xl font-semibold text-white mb-1">Sign in</h2>
+            <p className="text-slate-400 text-sm mb-6">Enter your credentials to access the system</p>
+          </div>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium text-surface-300 mb-1.5">Email</label>
+              <label htmlFor="login-email" className="block text-xs font-medium text-slate-400 mb-1.5">
+                Email address
+              </label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-400" />
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   id="login-email"
                   type="email"
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-white/10 border border-white/10 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-md text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-600 transition-colors text-sm"
                   placeholder="name@company.com"
                   required
+                  autoComplete="email"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-surface-300 mb-1.5">Password</label>
+              <label htmlFor="login-password" className="block text-xs font-medium text-slate-400 mb-1.5">
+                Password
+              </label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-surface-400" />
+                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
                 <input
                   id="login-password"
                   type="password"
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2.5 bg-white/10 border border-white/10 rounded-lg text-white placeholder-surface-500 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all"
+                  className="w-full pl-10 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-md text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-primary-500/50 focus:border-primary-600 transition-colors text-sm"
                   placeholder="••••••••"
                   required
+                  autoComplete="current-password"
                 />
               </div>
             </div>
@@ -84,10 +115,10 @@ const LoginPage = () => {
               id="login-submit"
               type="submit"
               disabled={loading}
-              className="w-full flex items-center justify-center gap-2 bg-gradient-to-r from-primary-600 to-primary-500 text-white py-2.5 rounded-lg font-medium hover:from-primary-500 hover:to-primary-400 transition-all duration-300 shadow-lg shadow-primary-500/25 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="w-full flex items-center justify-center gap-2 bg-primary-700 text-white py-2.5 rounded-md text-sm font-medium hover:bg-primary-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed mt-2"
             >
               {loading ? (
-                <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
                 <>
                   Sign In <ArrowRight className="w-4 h-4" />
@@ -96,15 +127,15 @@ const LoginPage = () => {
             </button>
           </form>
 
-          <div className="mt-6 pt-6 border-t border-white/10 text-center space-y-2">
-            <p className="text-surface-400 text-sm">
+          <div className="mt-6 pt-5 border-t border-slate-800 text-center space-y-2">
+            <p className="text-slate-500 text-xs">
               Don't have an account?{' '}
-              <Link to="/register" className="text-primary-400 hover:text-primary-300 font-medium underline-offset-4 hover:underline">
+              <Link to="/register" className="text-primary-400 hover:text-primary-300 font-medium">
                 Sign up
               </Link>
             </p>
-            <p className="text-surface-400 text-xs">
-              Demo credentials: <span className="text-surface-300 font-mono">admin@aubank.com / password123</span>
+            <p className="text-slate-600 text-[11px]">
+              Demo: <span className="text-slate-500 font-mono">admin@aubank.com / password123</span>
             </p>
           </div>
         </div>

@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -13,15 +13,16 @@
 
   body {
     font-family: 'Inter', system-ui, -apple-system, sans-serif;
-    background-color: #f1f5f9;
+    background-color: #f8fafc;
     color: #1e293b;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+    font-size: 14px;
   }
 
   ::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
+    width: 5px;
+    height: 5px;
   }
 
   ::-webkit-scrollbar-track {
@@ -36,116 +37,123 @@
   ::-webkit-scrollbar-thumb:hover {
     background: #94a3b8;
   }
+
+  /* Focus visible for keyboard navigation */
+  :focus-visible {
+    outline: 2px solid #486581;
+    outline-offset: 2px;
+  }
 }
 
 @layer components {
+  /* ── Buttons ───────────────────────────────────────── */
   .btn-primary {
-    @apply bg-primary-600 text-white px-4 py-2 rounded-lg font-medium
-           hover:bg-primary-700 active:bg-primary-800 transition-all duration-200
-           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-2
-           disabled:opacity-50 disabled:cursor-not-allowed
-           shadow-sm hover:shadow-md;
+    @apply bg-primary-800 text-white px-4 py-2 rounded-md text-sm font-medium
+           hover:bg-primary-900 active:bg-primary-950 transition-colors duration-150
+           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:ring-offset-1
+           disabled:opacity-50 disabled:cursor-not-allowed;
   }
 
   .btn-secondary {
-    @apply bg-white text-surface-700 px-4 py-2 rounded-lg font-medium
-           border border-surface-300 hover:bg-surface-50 active:bg-surface-100
-           transition-all duration-200 focus:outline-none focus:ring-2
-           focus:ring-primary-500 focus:ring-offset-2
-           shadow-sm hover:shadow-md;
+    @apply bg-white text-slate-700 px-4 py-2 rounded-md text-sm font-medium
+           border border-slate-300 hover:bg-slate-50 active:bg-slate-100
+           transition-colors duration-150 focus:outline-none focus:ring-2
+           focus:ring-primary-500 focus:ring-offset-1;
   }
 
   .btn-danger {
-    @apply bg-red-600 text-white px-4 py-2 rounded-lg font-medium
-           hover:bg-red-700 active:bg-red-800 transition-all duration-200
-           focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2
-           shadow-sm;
+    @apply bg-red-600 text-white px-4 py-2 rounded-md text-sm font-medium
+           hover:bg-red-700 active:bg-red-800 transition-colors duration-150
+           focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-1;
   }
 
+  .btn-ghost {
+    @apply text-slate-600 px-3 py-1.5 rounded-md text-sm font-medium
+           hover:bg-slate-100 active:bg-slate-200 transition-colors duration-150;
+  }
+
+  /* ── Card ──────────────────────────────────────────── */
   .card {
-    @apply bg-white rounded-xl border border-surface-200 shadow-sm
-           hover:shadow-md transition-shadow duration-300;
+    @apply bg-white rounded-lg border border-slate-200;
   }
 
+  /* ── Form Elements ─────────────────────────────────── */
   .input {
-    @apply w-full px-3 py-2 rounded-lg border border-surface-300
-           focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500
-           text-surface-900 placeholder-surface-400
-           transition-all duration-200 bg-white;
+    @apply w-full px-3 py-2 rounded-md border border-slate-300
+           focus:outline-none focus:ring-2 focus:ring-primary-500/40 focus:border-primary-600
+           text-slate-900 placeholder-slate-400
+           transition-colors duration-150 bg-white text-sm;
   }
 
   .label {
-    @apply block text-sm font-medium text-surface-700 mb-1;
+    @apply block text-xs font-medium text-slate-600 mb-1 uppercase tracking-wide;
   }
 
+  /* ── Badges ────────────────────────────────────────── */
   .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium;
+    @apply inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold tracking-wide;
   }
 
   .badge-success {
-    @apply badge bg-emerald-100 text-emerald-800;
+    @apply badge bg-emerald-50 text-emerald-700 border border-emerald-200;
   }
 
   .badge-warning {
-    @apply badge bg-amber-100 text-amber-800;
+    @apply badge bg-amber-50 text-amber-700 border border-amber-200;
   }
 
   .badge-danger {
-    @apply badge bg-red-100 text-red-800;
+    @apply badge bg-red-50 text-red-700 border border-red-200;
   }
 
   .badge-info {
-    @apply badge bg-blue-100 text-blue-800;
+    @apply badge bg-blue-50 text-blue-700 border border-blue-200;
   }
 
+  .badge-neutral {
+    @apply badge bg-slate-100 text-slate-600 border border-slate-200;
+  }
+
+  /* ── Table ─────────────────────────────────────────── */
   .table-header {
-    @apply px-4 py-3 text-left text-xs font-semibold text-surface-600 uppercase tracking-wider;
+    @apply px-3 py-2.5 text-left text-[11px] font-semibold text-slate-500 uppercase tracking-wider bg-slate-50;
   }
 
   .table-cell {
-    @apply px-4 py-3 text-sm text-surface-700;
+    @apply px-3 py-2.5 text-sm text-slate-700;
   }
 
-  /* Sidebar active state */
+  /* ── Sidebar Navigation ────────────────────────────── */
   .nav-link {
-    @apply flex items-center gap-3 px-4 py-2.5 rounded-lg text-surface-400
-           hover:text-white hover:bg-white/10 transition-all duration-200
-           text-sm font-medium;
+    @apply flex items-center gap-3 px-3 py-2 rounded-md text-slate-400
+           hover:text-slate-200 hover:bg-white/10 transition-colors duration-150
+           text-[13px] font-medium;
   }
 
   .nav-link-active {
-    @apply nav-link text-white bg-white/15 shadow-inner;
+    @apply flex items-center gap-3 px-3 py-2 rounded-md
+           text-white bg-white/10
+           text-[13px] font-medium border-l-2 border-blue-400;
   }
 
-  /* Glassmorphism card */
-  .glass-card {
-    @apply bg-white/80 backdrop-blur-lg rounded-xl border border-white/20 shadow-lg;
+  .nav-section-label {
+    @apply text-[10px] font-semibold uppercase tracking-widest text-slate-500 px-3 mb-1.5;
   }
 
-  /* Gradient text */
-  .gradient-text {
-    @apply bg-gradient-to-r from-primary-600 to-primary-400 bg-clip-text text-transparent;
-  }
-
-  /* Pulse animation for loading states */
-  .pulse-subtle {
-    animation: pulse-subtle 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-subtle {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.7; }
-  }
-
-  /* Drop zone styling */
+  /* ── Dropzone ──────────────────────────────────────── */
   .dropzone {
-    @apply border-2 border-dashed border-surface-300 rounded-xl p-8
-           flex flex-col items-center justify-center gap-3
-           cursor-pointer transition-all duration-300
-           hover:border-primary-400 hover:bg-primary-50/50;
+    @apply border-2 border-dashed border-slate-300 rounded-lg p-8
+           flex flex-col items-center justify-center gap-2
+           cursor-pointer transition-colors duration-200
+           hover:border-primary-500 hover:bg-primary-50/30;
   }
 
   .dropzone-active {
-    @apply border-primary-500 bg-primary-50 scale-[1.02];
+    @apply border-primary-600 bg-primary-50;
+  }
+
+  /* ── Skeleton Loader ───────────────────────────────── */
+  .skeleton {
+    @apply bg-slate-200 rounded animate-pulse;
   }
 }

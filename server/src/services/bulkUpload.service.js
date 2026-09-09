@@ -6,7 +6,7 @@ const { v4: uuidv4 } = require('uuid');
 const Document = require('../models/Document');
 const FolderType = require('../models/FolderType');
 const UploadBatch = require('../models/UploadBatch');
-const { parseFilename, buildFullFolderCode } = require('./fileMapping.service');
+const { parseFilename, buildFullFolderCode, findMatchingIdentifiers, filenameContainsId, normalizeFilename } = require('./fileMapping.service');
 const storageService = require('./storage.service');
 const { writeAuditLog } = require('./audit.service');
 
@@ -271,10 +271,10 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
           folderType = folderTypeMap.get('SUPPORT') || folderTypes[0];
         }
 
-        // Multi-strategy file matching
+        // Multi-strategy file matching (robust — no position-based filename assumptions)
         let matchedEntry = null;
 
-        // Strategy 1: Explicit Source File Name match
+        // Strategy 1: Explicit Source File Name match (preserved from original)
         if (row.sourceFileName) {
           const sTarget = row.sourceFileName.trim().toLowerCase();
           const sBase = sTarget.replace(/\.[^/.]+$/, '');
@@ -288,19 +288,57 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
           );
         }
 
-        // Strategy 2: Standard LoanNumber_FolderCode pattern
+        // Strategy 2: Robust identifier-based matching
+        // Find unmatched files whose filename contains this row's loan number
         if (!matchedEntry) {
           const loansToCheck = [effectiveLoanNumber, row.loanNumber, ...(row.allLoanNumbers || [])].filter(Boolean);
-          for (const l of loansToCheck) {
-            const cleanL = String(l).trim().toUpperCase();
-            matchedEntry = fileEntries.find(
-              (e) => !e.matched && e.parsed && `${e.parsed.loanNumber}_${e.fullCode}`.toUpperCase() === `${cleanL}_${normalizedFolderCode}`
-            );
-            if (matchedEntry) break;
+          const candidateEntries = [];
+
+          for (const entry of fileEntries) {
+            if (entry.matched) continue;
+
+            for (const loan of loansToCheck) {
+              const result = filenameContainsId(entry.originalName, loan);
+              if (result.found) {
+                candidateEntries.push({ entry, loan, confidence: result.confidence });
+                break; // This file matches at least one loan; no need to check more loans
+              }
+            }
+          }
+
+          if (candidateEntries.length === 1) {
+            matchedEntry = candidateEntries[0].entry;
+          } else if (candidateEntries.length > 1) {
+            // Multiple files match this loan — try to narrow by folder code
+            const narrowed = candidateEntries.filter((c) => {
+              if (!c.entry.parsed || !c.entry.parsed.folderCode) return false;
+              return c.entry.parsed.folderCode === normalizedFolderCode ||
+                     c.entry.fullCode === normalizedFolderCode;
+            });
+
+            if (narrowed.length === 1) {
+              matchedEntry = narrowed[0].entry;
+            } else {
+              // Prefer exact token matches over substring matches
+              const exactMatches = candidateEntries.filter(c => c.confidence === 'exact');
+              if (exactMatches.length === 1) {
+                matchedEntry = exactMatches[0].entry;
+              } else if (exactMatches.length > 1) {
+                // Further narrow: pick the one with the fewest extra tokens (closest match)
+                exactMatches.sort((a, b) => {
+                  const aTokens = a.entry.baseName.split(/[_\-\s]+/).length;
+                  const bTokens = b.entry.baseName.split(/[_\-\s]+/).length;
+                  return aTokens - bTokens;
+                });
+                matchedEntry = exactMatches[0].entry;
+              } else if (candidateEntries.length > 0) {
+                matchedEntry = candidateEntries[0].entry;
+              }
+            }
           }
         }
 
-        // Strategy 3: Filename starts with or contains Loan Number
+        // Strategy 3: Fallback — filename starts with or exactly matches loan number
         if (!matchedEntry) {
           const loansToCheck = [effectiveLoanNumber, row.loanNumber, ...(row.allLoanNumbers || [])].filter(Boolean);
           for (const l of loansToCheck) {
@@ -308,8 +346,9 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
             matchedEntry = fileEntries.find(
               (e) => !e.matched && (
                 e.lowerBaseName === cleanL ||
-                e.lowerBaseName.startsWith(cleanL) ||
-                e.lowerBaseName.includes(cleanL)
+                e.lowerBaseName.startsWith(cleanL + '_') ||
+                e.lowerBaseName.startsWith(cleanL + '-') ||
+                e.lowerBaseName.startsWith(cleanL + ' ')
               )
             );
             if (matchedEntry) break;
