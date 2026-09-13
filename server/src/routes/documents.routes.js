@@ -11,6 +11,7 @@ router.use(authenticate);
 
 router.get('/search', validateQuery(searchDocumentsSchema), documentsController.searchDocuments);
 router.get('/stats', documentsController.getStats);
+router.post('/download-bulk', requireDownloadPermission, documentsController.downloadBulk);
 router.get('/:id/view', documentsController.viewDocument);
 router.get('/:id/download', requireDownloadPermission, documentsController.downloadDocument);
 router.delete('/:id', requireRole('SUPER_ADMIN', 'CLIENT_ADMIN'), documentsController.deleteDocument);

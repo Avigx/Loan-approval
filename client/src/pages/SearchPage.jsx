@@ -1,9 +1,9 @@
 import { useState, useEffect } from 'react';
-import { searchDocuments, downloadDocument, deleteDocument } from '../api/documents';
+import { searchDocuments, downloadDocument, deleteDocument, downloadBulkDocuments } from '../api/documents';
 import api from '../api/client';
 import { useAuth } from '../context/AuthContext';
 import {
-  Search, RotateCcw, Eye, Download, FileText, Loader2,
+  Search, RotateCcw, Eye, Download, DownloadCloud, FileText, Loader2,
   Trash2, ChevronDown, ChevronUp, Filter,
 } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -34,6 +34,9 @@ const SearchPage = () => {
   // Delete state
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
+
+  // Bulk download state
+  const [bulkDownloading, setBulkDownloading] = useState(false);
 
   // Load folders for dropdown
   useEffect(() => {
@@ -121,6 +124,31 @@ const SearchPage = () => {
 
   const handlePageChange = (page) => {
     handleSearch(null, page);
+  };
+
+  const handleBulkDownload = async () => {
+    if (!results?.documents?.length) return;
+    setBulkDownloading(true);
+    try {
+      const ids = results.documents.map((doc) => doc._id);
+      await downloadBulkDocuments(ids);
+      toast.success('ZIP download started');
+    } catch (err) {
+      // When responseType is 'blob', axios wraps error JSON as a Blob — parse it
+      let message = 'Unable to package documents for download';
+      if (err.response?.data instanceof Blob) {
+        try {
+          const text = await err.response.data.text();
+          const json = JSON.parse(text);
+          if (json.error) message = json.error;
+        } catch (_) { /* ignore parse errors */ }
+      } else if (err.response?.data?.error) {
+        message = err.response.data.error;
+      }
+      toast.error(message);
+    } finally {
+      setBulkDownloading(false);
+    }
   };
 
   const truncate = (str, len = 20) => {
@@ -301,11 +329,33 @@ const SearchPage = () => {
             <p className="text-xs text-slate-500 font-medium">
               {results.pagination.total} document{results.pagination.total !== 1 ? 's' : ''} found
             </p>
-            {results.pagination.totalPages > 1 && (
-              <p className="text-xs text-slate-400">
-                Page {results.pagination.page} of {results.pagination.totalPages}
-              </p>
-            )}
+            <div className="flex items-center gap-2">
+              {canDownload && results.documents.length > 0 && (
+                <button
+                  id="download-all-btn"
+                  onClick={handleBulkDownload}
+                  disabled={bulkDownloading}
+                  className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-md transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {bulkDownloading ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      Preparing ZIP…
+                    </>
+                  ) : (
+                    <>
+                      <DownloadCloud className="w-3.5 h-3.5" />
+                      Download All
+                    </>
+                  )}
+                </button>
+              )}
+              {results.pagination.totalPages > 1 && (
+                <p className="text-xs text-slate-400">
+                  Page {results.pagination.page} of {results.pagination.totalPages}
+                </p>
+              )}
+            </div>
           </div>
 
           {results.documents.length === 0 ? (

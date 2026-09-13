@@ -1,5 +1,6 @@
 const Document = require('../models/Document');
 const Folder = require('../models/Folder');
+const archiver = require('archiver');
 const storageService = require('../services/storage.service');
 const { scopeToClient } = require('../middleware/permissions.middleware');
 const { writeAuditLog, getClientIp } = require('../services/audit.service');
@@ -252,6 +253,79 @@ const deleteDocument = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/documents/download-bulk
+ * Download multiple documents as a single ZIP file. Requires download permission. Tenant-scoped.
+ */
+const downloadBulk = async (req, res, next) => {
+  try {
+    const { documentIds } = req.body;
+
+    if (!Array.isArray(documentIds) || documentIds.length === 0) {
+      return res.status(400).json({ error: 'documentIds must be a non-empty array' });
+    }
+
+    // Cap the number of documents to prevent abuse
+    if (documentIds.length > 500) {
+      return res.status(400).json({ error: 'Cannot download more than 500 documents at once' });
+    }
+
+    const filter = { _id: { $in: documentIds }, ...scopeToClient(req) };
+    const documents = await Document.find(filter).lean();
+
+    if (documents.length === 0) {
+      return res.status(404).json({ error: 'No documents found for the given IDs' });
+    }
+
+    // Filter to only documents whose physical files exist
+    const validDocs = documents.filter((doc) => storageService.exists(doc.filePath));
+
+    if (validDocs.length === 0) {
+      return res.status(404).json({ error: 'No downloadable files found on storage' });
+    }
+
+    // Set response headers for ZIP download
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', 'attachment; filename="search_results.zip"');
+
+    const archive = archiver('zip', { zlib: { level: 5 } });
+
+    // Handle archiver errors
+    archive.on('error', (err) => {
+      console.error('Archiver error:', err);
+      // If headers not yet sent, send an error response
+      if (!res.headersSent) {
+        return res.status(500).json({ error: 'Failed to generate ZIP archive' });
+      }
+      res.end();
+    });
+
+    // Pipe archive data to the response
+    archive.pipe(res);
+
+    // Add each valid document to the archive
+    for (const doc of validDocs) {
+      const stream = storageService.getReadStream(doc.filePath);
+      const filename = `${doc.uniqueRef}.${doc.fileType}`;
+      archive.append(stream, { name: filename });
+    }
+
+    // Audit log
+    writeAuditLog({
+      action: 'bulk_download',
+      userId: req.user.id,
+      clientId: req.user.clientId,
+      ipAddress: getClientIp(req),
+      details: { documentCount: validDocs.length, skippedMissing: documents.length - validDocs.length },
+    });
+
+    // Finalize the archive (this triggers the end event)
+    await archive.finalize();
+  } catch (error) {
+    next(error);
+  }
+};
+
 function getContentType(fileType) {
   const types = {
     pdf: 'application/pdf',
@@ -264,4 +338,4 @@ function getContentType(fileType) {
   return types[fileType] || 'application/octet-stream';
 }
 
-module.exports = { searchDocuments, viewDocument, downloadDocument, deleteDocument, getStats };
+module.exports = { searchDocuments, viewDocument, downloadDocument, downloadBulk, deleteDocument, getStats };
