@@ -5,7 +5,7 @@
  *   1. One demo Client: "AU BANK" (code: AUBANK)
  *   2. One CLIENT_ADMIN user: admin@aubank.com / password123
  *   3. One SUPER_ADMIN user: superadmin@dms.com / password123
- *   4. Full FolderType master list (13 families × 3 variants = 39 folder types)
+ *   4. Folder master list (Pre sale, Post sale, Passa, VIN)
  *
  * Usage: npm run seed --workspace=server
  */
@@ -15,28 +15,13 @@ const bcrypt = require('bcrypt');
 const connectDB = require('./config/db');
 const Client = require('./models/Client');
 const User = require('./models/User');
-const FolderType = require('./models/FolderType');
+const Folder = require('./models/Folder');
 
-const FOLDER_FAMILIES = [
-  { familyName: 'Invocation', baseCode: 'INVO' },
-  { familyName: 'Reference Notice', baseCode: 'REF' },
-  { familyName: 'Conciliation Notice', baseCode: 'CONC' },
-  { familyName: 'Demand Notice', baseCode: 'DEMAND' },
-  { familyName: 'Legal Notice', baseCode: 'LEGAL' },
-  { familyName: 'Arbitration', baseCode: 'ARB' },
-  { familyName: 'Settlement', baseCode: 'SETTLE' },
-  { familyName: 'Recovery Notice', baseCode: 'RECOV' },
-  { familyName: 'Reminder Notice', baseCode: 'REMIND' },
-  { familyName: 'Acknowledgement / Reply', baseCode: 'ACK' },
-  { familyName: 'Payment Proof', baseCode: 'PAY' },
-  { familyName: 'Agreement / Contract', baseCode: 'AGREE' },
-  { familyName: 'Supporting Documents', baseCode: 'SUPPORT' },
-];
-
-const VARIANTS = [
-  { variant: 'NOTICE', suffix: '', labelSuffix: '' },
-  { variant: 'POD', suffix: '_POD', labelSuffix: ' POD' },
-  { variant: 'TRACKING', suffix: '_TRACKING', labelSuffix: ' Tracking' },
+const FOLDERS = [
+  { name: 'Pre sale', code: 'PRE_SALE' },
+  { name: 'Post sale', code: 'POST_SALE' },
+  { name: 'Passa', code: 'PASSA' },
+  { name: 'VIN', code: 'VIN' },
 ];
 
 const seed = async () => {
@@ -91,31 +76,25 @@ const seed = async () => {
       console.log('  ⏭️  Client Admin already exists');
     }
 
-    // ── 4. Folder Types ──
+    // ── 4. Folders ──
     let folderCount = 0;
-    for (const family of FOLDER_FAMILIES) {
-      for (const v of VARIANTS) {
-        const folderCode = `${family.baseCode}${v.suffix}`;
-        const displayLabel = `${family.familyName}${v.labelSuffix}`;
-
-        const exists = await FolderType.findOne({ clientId: null, folderCode });
-        if (!exists) {
-          await FolderType.create({
-            familyName: family.familyName,
-            variant: v.variant,
-            folderCode,
-            displayLabel,
-            clientId: null, // global
-            active: true,
-          });
-          folderCount++;
-        }
+    for (const f of FOLDERS) {
+      const exists = await Folder.findOne({ clientId: null, code: f.code });
+      if (!exists) {
+        await Folder.create({
+          name: f.name,
+          code: f.code,
+          displayLabel: f.name,
+          clientId: null, // global
+          active: true,
+        });
+        folderCount++;
       }
     }
     if (folderCount > 0) {
-      console.log(`  ✅ Created ${folderCount} Folder Types (${FOLDER_FAMILIES.length} families × ${VARIANTS.length} variants)`);
+      console.log(`  ✅ Created ${folderCount} Folders`);
     } else {
-      console.log('  ⏭️  All Folder Types already exist');
+      console.log('  ⏭️  All Folders already exist');
     }
 
     console.log('\n✅ Seeding complete!\n');

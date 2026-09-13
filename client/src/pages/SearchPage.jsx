@@ -19,9 +19,9 @@ const SearchPage = () => {
     loanNumber: '',
     uniqueRef: '',
     customerName: '',
-    folderCode: '',
     trackingNumber: '',
-    documentType: '',
+    folderCode: '',
+    noticeType: '',
     dispatchFrom: '',
     dispatchTo: '',
   });
@@ -35,7 +35,7 @@ const SearchPage = () => {
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [deleting, setDeleting] = useState(false);
 
-  // Load folder types for dropdown
+  // Load folders for dropdown
   useEffect(() => {
     api.get('/folders').then(({ data }) => setFolders(data.folders)).catch(() => {});
   }, []);
@@ -71,8 +71,8 @@ const SearchPage = () => {
   const handleReset = () => {
     setQuickSearch('');
     setFilters({
-      loanNumber: '', uniqueRef: '', customerName: '', folderCode: '',
-      trackingNumber: '', documentType: '', dispatchFrom: '', dispatchTo: '',
+      loanNumber: '', uniqueRef: '', customerName: '',
+      trackingNumber: '', folderCode: '', noticeType: '', dispatchFrom: '', dispatchTo: '',
     });
     setResults(null);
     setCurrentPage(1);
@@ -126,6 +126,11 @@ const SearchPage = () => {
   const truncate = (str, len = 20) => {
     if (!str) return '—';
     return str.length > len ? str.slice(0, len) + '…' : str;
+  };
+
+  const formatNoticeType = (nt) => {
+    if (!nt) return '—';
+    return nt.charAt(0).toUpperCase() + nt.slice(1).toLowerCase();
   };
 
   return (
@@ -188,7 +193,7 @@ const SearchPage = () => {
               <label className="label">Unique ID</label>
               <input
                 className="input"
-                placeholder="e.g. L900..._INVO"
+                placeholder="e.g. L900..._PRE_SALE_TRACKING"
                 value={filters.uniqueRef}
                 onChange={(e) => setFilters({ ...filters, uniqueRef: e.target.value })}
               />
@@ -211,10 +216,23 @@ const SearchPage = () => {
               >
                 <option value="">All folders</option>
                 {folders.map((f) => (
-                  <option key={f._id} value={f.folderCode}>
+                  <option key={f._id} value={f.code}>
                     {f.displayLabel}
                   </option>
                 ))}
+              </select>
+            </div>
+            <div>
+              <label className="label">Notice Type</label>
+              <select
+                className="input"
+                value={filters.noticeType}
+                onChange={(e) => setFilters({ ...filters, noticeType: e.target.value })}
+              >
+                <option value="">All notice types</option>
+                <option value="NOTICE">Notice</option>
+                <option value="RECEIPT">Receipt</option>
+                <option value="TRACKING">Tracking</option>
               </select>
             </div>
             <div>
@@ -224,15 +242,6 @@ const SearchPage = () => {
                 placeholder="Enter tracking number"
                 value={filters.trackingNumber}
                 onChange={(e) => setFilters({ ...filters, trackingNumber: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="label">Document Type</label>
-              <input
-                className="input"
-                placeholder="e.g. Invocation Notice"
-                value={filters.documentType}
-                onChange={(e) => setFilters({ ...filters, documentType: e.target.value })}
               />
             </div>
             <div>
@@ -315,11 +324,9 @@ const SearchPage = () => {
                       <th className="table-header">Unique ID</th>
                       <th className="table-header">Customer</th>
                       <th className="table-header">Folder</th>
-                      <th className="table-header">Doc Type</th>
+                      <th className="table-header">Notice Type</th>
                       <th className="table-header">Dispatch</th>
-                      <th className="table-header">POD</th>
                       <th className="table-header">Tracking</th>
-                      <th className="table-header">Remark</th>
                       <th className="table-header text-right">Actions</th>
                     </tr>
                   </thead>
@@ -342,17 +349,17 @@ const SearchPage = () => {
                         </td>
                         <td className="table-cell text-xs">{truncate(doc.customerName, 18)}</td>
                         <td className="table-cell">
-                          <span className="badge-info">{doc.folderTypeId?.folderCode || '—'}</span>
+                          <span className="badge-info">{doc.folderId?.displayLabel || '—'}</span>
                         </td>
-                        <td className="table-cell text-xs">{doc.folderTypeId?.displayLabel || '—'}</td>
+                        <td className="table-cell">
+                          <span className="text-xs font-medium text-slate-700">
+                            {formatNoticeType(doc.noticeType)}
+                          </span>
+                        </td>
                         <td className="table-cell text-xs">
                           {doc.dispatchDate ? new Date(doc.dispatchDate).toLocaleDateString() : '—'}
                         </td>
-                        <td className="table-cell text-xs">{doc.podStatus || '—'}</td>
                         <td className="table-cell text-xs font-mono">{truncate(doc.trackingNumber, 14)}</td>
-                        <td className="table-cell text-xs max-w-[120px]">
-                          <span title={doc.remark || ''} className="truncate block">{doc.remark || '—'}</span>
-                        </td>
                         <td className="table-cell">
                           <div className="flex items-center justify-end gap-0.5">
                             <button
@@ -434,7 +441,8 @@ const SearchPage = () => {
           { label: 'Loan Number', value: deleteTarget.loanNumber },
           { label: 'Unique ID', value: deleteTarget.uniqueRef },
           { label: 'Customer', value: deleteTarget.customerName || '—' },
-          { label: 'Type', value: deleteTarget.folderTypeId?.displayLabel || '—' },
+          { label: 'Folder', value: deleteTarget.folderId?.displayLabel || '—' },
+          { label: 'Notice Type', value: formatNoticeType(deleteTarget.noticeType) },
         ] : []}
       />
 
@@ -487,7 +495,11 @@ const SearchPage = () => {
                 <div className="space-y-1.5">
                   <div className="flex justify-between">
                     <span className="text-xs text-slate-500">Folder</span>
-                    <span className="text-xs text-slate-900">{viewDoc.folderTypeId?.displayLabel || '—'}</span>
+                    <span className="text-xs text-slate-900">{viewDoc.folderId?.displayLabel || '—'}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-xs text-slate-500">Notice Type</span>
+                    <span className="text-xs font-medium text-slate-900">{formatNoticeType(viewDoc.noticeType)}</span>
                   </div>
                   <div className="flex justify-between">
                     <span className="text-xs text-slate-500">File Type</span>
@@ -501,23 +513,6 @@ const SearchPage = () => {
                     <span className="text-xs text-slate-500">Tracking</span>
                     <span className="text-xs text-slate-900">{viewDoc.trackingNumber || '—'}</span>
                   </div>
-                </div>
-              </div>
-
-              {/* Status */}
-              <div className="border-t border-slate-100 pt-3">
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-wider mb-2">Status</p>
-                <div className="space-y-1.5">
-                  <div className="flex justify-between">
-                    <span className="text-xs text-slate-500">POD Status</span>
-                    <span className="text-xs text-slate-900">{viewDoc.podStatus || '—'}</span>
-                  </div>
-                  {viewDoc.remark && (
-                    <div>
-                      <span className="text-xs text-slate-500">Remark</span>
-                      <p className="text-xs text-slate-900 mt-0.5">{viewDoc.remark}</p>
-                    </div>
-                  )}
                 </div>
               </div>
             </div>

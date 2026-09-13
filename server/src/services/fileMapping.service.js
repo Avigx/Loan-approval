@@ -29,22 +29,7 @@ const extractTokens = (filename) => {
 
 /**
  * Check whether a filename contains a specific known identifier.
- * Uses word-boundary–aware matching: the identifier must appear as a distinct
- * substring, not buried inside a larger unrelated token.
- *
- * For example, if knownId = "12345":
- *   "12345_NOTICE.pdf"      → true
- *   "NOTICE_12345_FINAL.pdf" → true
- *   "X12345Y.pdf"           → true  (substring match — intentionally permissive)
- *   "123456.pdf"            → false (longer number containing 12345)
- *
- * We use a two-phase approach:
- *   1. Exact token match (high confidence)
- *   2. Substring match in the full normalized name (lower confidence)
- *
- * @param {string} filename
- * @param {string} knownId
- * @returns {{ found: boolean, confidence: 'exact'|'substring'|'none' }}
+ * Uses word-boundary–aware matching.
  */
 const filenameContainsId = (filename, knownId) => {
   if (!knownId || !filename) return { found: false, confidence: 'none' };
@@ -62,10 +47,7 @@ const filenameContainsId = (filename, knownId) => {
   // Phase 2: substring match in full normalized name
   const normalizedName = normalizeFilename(filename);
   if (normalizedName.includes(normalizedId)) {
-    // Guard against partial numeric matches: if the ID is purely numeric,
-    // verify it's not part of a longer number in the filename
     if (/^\d+$/.test(normalizedId)) {
-      // Build a regex that ensures the ID is bounded by non-digit or string edge
       const re = new RegExp(`(?:^|[^\\d])${escapeRegex(normalizedId)}(?:[^\\d]|$)`);
       if (re.test(normalizedName)) {
         return { found: true, confidence: 'substring' };
@@ -78,19 +60,8 @@ const filenameContainsId = (filename, knownId) => {
   return { found: false, confidence: 'none' };
 };
 
-/**
- * Escape a string for use in a RegExp.
- */
 const escapeRegex = (str) => str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-/**
- * Given a filename and a set of known identifiers (e.g. loan numbers from the
- * template), find which known IDs appear in the filename.
- *
- * @param {string} filename
- * @param {string[]} knownIds - Array of known identifiers
- * @returns {{ id: string, confidence: string }[]} Matched identifiers
- */
 const findMatchingIdentifiers = (filename, knownIds) => {
   const matches = [];
   for (const id of knownIds) {
@@ -103,49 +74,67 @@ const findMatchingIdentifiers = (filename, knownIds) => {
 };
 
 /**
- * Detect if the filename contains a known folder code (e.g. INVO, LEGAL, DEMAND).
- * @param {string} filename
- * @param {string[]} knownFolderCodes
- * @returns {string|null} The matched folder code, or null
+ * Detect if the filename contains a known folder code (e.g. PRE_SALE, POST_SALE).
  */
-const detectFolderCode = (filename, knownFolderCodes) => {
+const detectFolderCode = (filename, knownCodes) => {
   const tokens = extractTokens(filename);
   const normalizedName = normalizeFilename(filename);
 
-  for (const code of knownFolderCodes) {
+  for (const code of knownCodes) {
     const lowerCode = code.toLowerCase();
-    // Exact token match
     if (tokens.includes(lowerCode)) return code;
-    // Check compound codes like INVO_POD
     if (normalizedName.includes(lowerCode.replace(/_/g, '_'))) return code;
   }
   return null;
 };
 
 /**
- * Detect if the filename ends with or contains a variant suffix (TRACKING or POD).
- * @param {string} filename
- * @returns {string|null}
+ * Detect if the filename ends with or contains a notice type (TRACKING, RECEIPT, NOTICE).
  */
-const detectVariant = (filename) => {
+const detectNoticeType = (filename) => {
   const tokens = extractTokens(filename);
   const upper = tokens.map(t => t.toUpperCase());
   if (upper.includes('TRACKING')) return 'TRACKING';
-  if (upper.includes('POD')) return 'POD';
+  if (upper.includes('RECEIPT')) return 'RECEIPT';
+  if (upper.includes('POD')) return 'RECEIPT'; // Legacy compatibility
+  if (upper.includes('NOTICE')) return 'NOTICE';
   return null;
+};
+
+// ─── Underscore-based filename parser ─────────────────────────────────────────
+
+const parseFilenameByUnderscore = (filename) => {
+  if (!filename || typeof filename !== 'string') {
+    return { error: 'Empty or invalid filename' };
+  }
+
+  const ext = path.extname(filename).toLowerCase();
+  const nameWithoutExt = ext ? filename.slice(0, -ext.length).trim() : filename.trim();
+
+  if (!nameWithoutExt) {
+    return { error: 'Filename is just an extension' };
+  }
+
+  const underscoreIndex = nameWithoutExt.indexOf('_');
+  if (underscoreIndex === -1) {
+    return { error: 'Invalid filename format: Missing underscore delimiter' };
+  }
+
+  const parts = nameWithoutExt.split('_');
+  const loanNumber = parts[0].trim();
+  const trackingNumber = parts.slice(1).join('_').trim();
+
+  if (!loanNumber) {
+    return { error: 'Invalid filename format: Empty loan number before underscore' };
+  }
+
+  return { loanNumber, trackingNumber: trackingNumber || null };
 };
 
 // ─── Legacy compatibility ────────────────────────────────────────────────────
 
 /**
  * Parse a filename into component parts using the legacy pattern.
- * Retained for backward compatibility with existing callers.
- *
- * Enhanced: now handles arbitrary filename structures gracefully instead of
- * returning hard errors. Falls back to best-effort extraction.
- *
- * @param {string} filename
- * @returns {{ loanNumber: string, folderCode: string, variant: string|null } | { error: string }}
  */
 const parseFilename = (filename) => {
   if (!filename || typeof filename !== 'string') {
@@ -159,59 +148,51 @@ const parseFilename = (filename) => {
     return { error: 'Filename is just an extension' };
   }
 
-  // Split by common separators
   const parts = nameWithoutExt.split(/[_\-\s]+/).filter(Boolean);
 
   if (parts.length < 1) {
     return { error: `Cannot parse filename "${filename}"` };
   }
 
-  // If only one part, treat it as the loan number with no folder code
   if (parts.length === 1) {
-    return { loanNumber: parts[0], folderCode: null, variant: null };
+    return { loanNumber: parts[0], folderCode: null, noticeTypeEnum: null };
   }
 
-  // First part is the best guess for Loan Number
   const loanNumber = parts[0];
-
-  // Check if the last part is a known variant suffix
   const lastPart = parts[parts.length - 1].toUpperCase();
-  let variant = null;
+  let noticeTypeEnum = null;
   let folderCodeParts;
 
-  if (lastPart === 'TRACKING' || lastPart === 'POD') {
-    variant = lastPart;
+  if (lastPart === 'TRACKING' || lastPart === 'RECEIPT' || lastPart === 'POD' || lastPart === 'NOTICE') {
+    noticeTypeEnum = lastPart === 'POD' ? 'RECEIPT' : lastPart;
     folderCodeParts = parts.slice(1, -1);
   } else {
     folderCodeParts = parts.slice(1);
   }
 
-  // If no folder code parts remain after removing variant, return what we have
   if (folderCodeParts.length === 0) {
-    return { loanNumber, folderCode: null, variant };
+    return { loanNumber, folderCode: null, noticeTypeEnum };
   }
 
   const folderCode = folderCodeParts.join('_').toUpperCase();
 
-  return { loanNumber, folderCode, variant };
+  return { loanNumber, folderCode, noticeTypeEnum };
 };
 
-/**
- * Build the full folder code including variant suffix.
- * e.g. folderCode='INVO', variant='TRACKING' → 'INVO_TRACKING'
- */
-const buildFullFolderCode = (folderCode, variant) => {
-  if (!variant) return folderCode;
-  return `${folderCode}_${variant}`;
+const buildFullCode = (folderCode, noticeTypeEnum) => {
+  if (!folderCode) return null;
+  if (!noticeTypeEnum) return folderCode;
+  return `${folderCode}_${noticeTypeEnum}`;
 };
 
 module.exports = {
   parseFilename,
-  buildFullFolderCode,
+  parseFilenameByUnderscore,
+  buildFullCode,
   extractTokens,
   normalizeFilename,
   filenameContainsId,
   findMatchingIdentifiers,
   detectFolderCode,
-  detectVariant,
+  detectNoticeType,
 };

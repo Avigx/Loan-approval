@@ -4,9 +4,9 @@ const fs = require('fs');
 const path = require('path');
 const { v4: uuidv4 } = require('uuid');
 const Document = require('../models/Document');
-const FolderType = require('../models/FolderType');
+const Folder = require('../models/Folder');
 const UploadBatch = require('../models/UploadBatch');
-const { parseFilename, buildFullFolderCode, findMatchingIdentifiers, filenameContainsId, normalizeFilename } = require('./fileMapping.service');
+const { parseFilename, parseFilenameByUnderscore, buildFullCode, findMatchingIdentifiers, filenameContainsId, normalizeFilename } = require('./fileMapping.service');
 const storageService = require('./storage.service');
 const { writeAuditLog } = require('./audit.service');
 
@@ -74,24 +74,27 @@ const parseFlexibleDate = (val) => {
 };
 
 /**
- * Map natural document type descriptions to standard system folder codes.
+ * Map natural folder descriptions to standard system codes.
  */
-const mapDocumentTypeToFolderCode = (docType) => {
-  if (!docType || typeof docType !== 'string') return 'LEGAL';
-  const upper = docType.toUpperCase();
-  if (upper.includes('SARFAESI') || upper.includes('LEGAL') || upper.includes('13(2)')) return 'LEGAL';
-  if (upper.includes('DEMAND')) return 'DEMAND';
-  if (upper.includes('REPLY') || upper.includes('ACK') || upper.includes('ACKNOWLEDGEMENT')) return 'ACK';
-  if (upper.includes('SETTLEMENT') || upper.includes('OTS')) return 'SETTLE';
-  if (upper.includes('RECOVERY') || upper.includes('RECOV')) return 'RECOV';
-  if (upper.includes('REMINDER') || upper.includes('REMIND')) return 'REMIND';
-  if (upper.includes('ARBITRATION') || upper.includes('ARB')) return 'ARB';
-  if (upper.includes('CONCILIATION') || upper.includes('CONC')) return 'CONC';
-  if (upper.includes('INVOCATION') || upper.includes('INVO')) return 'INVO';
-  if (upper.includes('AGREEMENT') || upper.includes('CONTRACT')) return 'AGREE';
-  if (upper.includes('PAYMENT') || upper.includes('PROOF')) return 'PAY';
-  if (upper.includes('REFERENCE') || upper.includes('REF')) return 'REF';
-  return 'SUPPORT';
+const mapFolderToCode = (folderName) => {
+  if (!folderName || typeof folderName !== 'string') return 'PRE_SALE';
+  const lower = folderName.toLowerCase().trim();
+  if (lower.includes('pre') && lower.includes('sale')) return 'PRE_SALE';
+  if (lower.includes('post') && lower.includes('sale')) return 'POST_SALE';
+  if (lower.includes('passa')) return 'PASSA';
+  if (lower.includes('vin')) return 'VIN';
+  return 'PRE_SALE'; // Default fallback
+};
+
+/**
+ * Map natural notice type strings to enum.
+ */
+const mapNoticeTypeToEnum = (noticeTypeStr) => {
+  if (!noticeTypeStr || typeof noticeTypeStr !== 'string') return 'NOTICE';
+  const lower = noticeTypeStr.toLowerCase().trim();
+  if (lower.includes('tracking')) return 'TRACKING';
+  if (lower.includes('receipt') || lower.includes('pod')) return 'RECEIPT';
+  return 'NOTICE';
 };
 
 /**
@@ -127,10 +130,10 @@ const parseTemplate = (filePath) => {
         normalized.loanNumber = stringVal;
       } else if (cleanLower.includes('sourcefile') || cleanLower.includes('filename') || cleanLower === 'file') {
         normalized.sourceFileName = stringVal;
-      } else if (cleanLower.includes('foldercode') || cleanLower === 'folder') {
-        normalized.folderCode = stringVal;
-      } else if (cleanLower.includes('documenttype') || cleanLower.includes('noticetype') || cleanLower === 'type') {
-        normalized.documentType = stringVal;
+      } else if (cleanLower.includes('folder') || cleanLower.includes('foldercode')) {
+        normalized.folder = stringVal;
+      } else if (cleanLower.includes('noticetype') || cleanLower === 'type') {
+        normalized.noticeType = stringVal;
       } else if (cleanLower.includes('address')) {
         normalized.address = stringVal;
       } else if (cleanLower.includes('coborrower') || cleanLower.includes('co-borrower') || cleanLower.includes('guarantor')) {
@@ -139,14 +142,8 @@ const parseTemplate = (filePath) => {
         normalized.customerName = stringVal;
       } else if (cleanLower.includes('letterdate') || cleanLower.includes('dispatchdate') || cleanLower.includes('noticedate') || cleanLower === 'date') {
         normalized.dispatchDate = value;
-      } else if (cleanLower.includes('tracking') || cleanLower.includes('dispatchmode')) {
+      } else if (cleanLower.includes('tracking') || cleanLower.includes('dispatchmode') || cleanLower.includes('trackingnumber')) {
         normalized.trackingNumber = stringVal;
-      } else if (cleanLower.includes('remark') || cleanLower.includes('notes') || cleanLower.includes('note')) {
-        normalized.remark = stringVal;
-      } else if (cleanLower.includes('podstatus') || cleanLower.includes('status') || cleanLower.includes('actionrequired')) {
-        normalized.podStatus = stringVal;
-      } else if (cleanLower.includes('poddate')) {
-        normalized.podDate = value;
       } else {
         normalized[cleanKey] = stringVal;
       }
@@ -162,9 +159,14 @@ const parseTemplate = (filePath) => {
       }
     }
 
-    // Infer folderCode from documentType if folderCode is empty
-    if (!normalized.folderCode && normalized.documentType) {
-      normalized.folderCode = mapDocumentTypeToFolderCode(normalized.documentType);
+    // Infer folder code
+    if (normalized.folder) {
+      normalized.folderCode = mapFolderToCode(normalized.folder);
+    }
+    
+    // Infer notice type enum
+    if (normalized.noticeType) {
+      normalized.noticeTypeEnum = mapNoticeTypeToEnum(normalized.noticeType);
     }
 
     return normalized;
@@ -179,14 +181,16 @@ const parseTemplate = (filePath) => {
  * @param {object[]} params.documentFiles - Array of multer file objects for documents
  * @param {string} params.clientId - Client/tenant ID
  * @param {string} params.userId - Uploading user's ID
+ * @param {string} params.batchName - Optional user-provided batch name
  * @returns {Promise<object>} The created UploadBatch document
  */
-const processBulkUpload = async ({ templateFile, documentFiles, clientId, userId }) => {
+const processBulkUpload = async ({ templateFile, documentFiles, clientId, userId, batchName }) => {
   const batchCode = generateBatchCode();
 
   // Create the batch record
   const batch = await UploadBatch.create({
     batchCode,
+    batchName: batchName || '',
     clientId,
     uploadedById: userId,
     templateFilePath: templateFile.path,
@@ -206,6 +210,7 @@ const processBulkUpload = async ({ templateFile, documentFiles, clientId, userId
  */
 const processInBackground = async (batch, templateFile, documentFiles, clientId, userId) => {
   const errors = [];
+  const successFiles = [];
   let successCount = 0;
   let failCount = 0;
 
@@ -221,9 +226,10 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
       const ext = path.extname(originalName).toLowerCase();
       const baseName = originalName.slice(0, -ext.length).trim();
       const parsed = parseFilename(originalName);
+      const underscoreParsed = parseFilenameByUnderscore(originalName);
       let fullCode = null;
       if (!parsed.error) {
-        fullCode = buildFullFolderCode(parsed.folderCode, parsed.variant);
+        fullCode = buildFullCode(parsed.noticeCode, parsed.variant);
       }
       return {
         file,
@@ -232,19 +238,20 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
         baseName,
         lowerBaseName: baseName.toLowerCase(),
         parsed: parsed.error ? null : parsed,
+        underscoreParsed: underscoreParsed.error ? null : underscoreParsed,
         fullCode,
         matched: false,
       };
     });
 
-    // 3. Load all active FolderTypes for this client (including global ones)
-    const folderTypes = await FolderType.find({
+    // 3. Load all active Folders for this client (including global ones)
+    const folders = await Folder.find({
       $or: [{ clientId }, { clientId: null }],
       active: true,
     });
-    const folderTypeMap = new Map();
-    for (const ft of folderTypes) {
-      folderTypeMap.set(ft.folderCode.toUpperCase(), ft);
+    const folderMap = new Map();
+    for (const f of folders) {
+      folderMap.set(f.code.toUpperCase(), f);
     }
 
     // 4. Process each template row
@@ -257,18 +264,25 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
 
         // Validate required fields
         if (!effectiveLoanNumber) {
-          errors.push({ row: rowNum, error: 'Missing Loan Number in template' });
+          errors.push({ row: rowNum, fileName: null, error: 'Missing Loan Number in template' });
           failCount++;
           continue;
         }
 
-        const normalizedFolderCode = (row.folderCode || 'LEGAL').toUpperCase();
+        const normalizedFolderCode = (row.folderCode || 'PRE_SALE').toUpperCase();
+        const noticeTypeEnum = row.noticeTypeEnum || 'NOTICE';
 
-        // Look up folder type
-        let folderType = folderTypeMap.get(normalizedFolderCode);
-        if (!folderType) {
-          // Fallback to SUPPORT if folder code isn't recognized
-          folderType = folderTypeMap.get('SUPPORT') || folderTypes[0];
+        // Look up folder
+        let folder = folderMap.get(normalizedFolderCode);
+        if (!folder) {
+          // Fallback to first available folder
+          folder = folderMap.get('PRE_SALE') || folders[0];
+        }
+
+        if (!folder) {
+          errors.push({ row: rowNum, fileName: null, error: 'No folders configured in the system' });
+          failCount++;
+          continue;
         }
 
         // Multi-strategy file matching (robust — no position-based filename assumptions)
@@ -288,7 +302,20 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
           );
         }
 
-        // Strategy 2: Robust identifier-based matching
+        // Strategy 2: Underscore-based matching — use loan number from filename
+        if (!matchedEntry) {
+          for (const entry of fileEntries) {
+            if (entry.matched) continue;
+            if (entry.underscoreParsed && entry.underscoreParsed.loanNumber) {
+              if (entry.underscoreParsed.loanNumber.toLowerCase() === effectiveLoanNumber.toLowerCase()) {
+                matchedEntry = entry;
+                break;
+              }
+            }
+          }
+        }
+
+        // Strategy 3: Robust identifier-based matching
         // Find unmatched files whose filename contains this row's loan number
         if (!matchedEntry) {
           const loansToCheck = [effectiveLoanNumber, row.loanNumber, ...(row.allLoanNumbers || [])].filter(Boolean);
@@ -311,8 +338,8 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
           } else if (candidateEntries.length > 1) {
             // Multiple files match this loan — try to narrow by folder code
             const narrowed = candidateEntries.filter((c) => {
-              if (!c.entry.parsed || !c.entry.parsed.folderCode) return false;
-              return c.entry.parsed.folderCode === normalizedFolderCode ||
+              if (!c.entry.parsed || !c.entry.parsed.noticeCode) return false;
+              return c.entry.parsed.noticeCode === normalizedFolderCode ||
                      c.entry.fullCode === normalizedFolderCode;
             });
 
@@ -338,7 +365,7 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
           }
         }
 
-        // Strategy 3: Fallback — filename starts with or exactly matches loan number
+        // Strategy 4: Fallback — filename starts with or exactly matches loan number
         if (!matchedEntry) {
           const loansToCheck = [effectiveLoanNumber, row.loanNumber, ...(row.allLoanNumbers || [])].filter(Boolean);
           for (const l of loansToCheck) {
@@ -358,7 +385,8 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
         if (!matchedEntry) {
           errors.push({
             row: rowNum,
-            error: `No matching file found for Loan ${effectiveLoanNumber} (Folder: ${normalizedFolderCode}${row.sourceFileName ? `, Source File: ${row.sourceFileName}` : ''})`,
+            fileName: row.sourceFileName || null,
+            error: `No matching file found for Loan ${effectiveLoanNumber} (Folder: ${normalizedFolderCode}, Type: ${noticeTypeEnum})`,
           });
           failCount++;
           continue;
@@ -367,21 +395,27 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
         // Mark candidate as matched so it won't be used twice
         matchedEntry.matched = true;
 
+        // Extract tracking number from filename if not provided in template
+        let trackingNumber = row.trackingNumber || null;
+        if (!trackingNumber && matchedEntry.underscoreParsed && matchedEntry.underscoreParsed.trackingNumber) {
+          trackingNumber = matchedEntry.underscoreParsed.trackingNumber;
+        }
+
         // Store the file in a batch subdirectory
         const stored = await storageService.moveToSubDir(matchedEntry.file, batch.batchCode);
 
         // Create Document record
-        const uniqueRef = `${effectiveLoanNumber}_${normalizedFolderCode}`;
+        // UniqueRef logic: loanNumber_folderCode_noticeType
+        const uniqueRef = `${effectiveLoanNumber}_${normalizedFolderCode}_${noticeTypeEnum}`;
+        
         await Document.create({
           loanNumber: effectiveLoanNumber,
           uniqueRef,
           customerName: row.customerName || null,
-          folderTypeId: folderType._id,
+          folderId: folder._id,
+          noticeType: noticeTypeEnum,
           dispatchDate: parseFlexibleDate(row.dispatchDate),
-          podStatus: row.podStatus || null,
-          podDate: parseFlexibleDate(row.podDate),
-          trackingNumber: row.trackingNumber || null,
-          remark: row.remark || null,
+          trackingNumber,
           filePath: stored.relativePath,
           fileType: path.extname(matchedEntry.file.originalname).replace('.', '').toLowerCase(),
           fileSizeBytes: stored.sizeBytes,
@@ -389,9 +423,13 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
           batchId: batch._id,
         });
 
+        successFiles.push({
+          fileName: matchedEntry.originalName,
+          loanNumber: effectiveLoanNumber,
+        });
         successCount++;
       } catch (rowErr) {
-        errors.push({ row: rowNum, error: rowErr.message });
+        errors.push({ row: rowNum, fileName: null, error: rowErr.message });
         failCount++;
       }
     }
@@ -400,7 +438,7 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
     for (const entry of fileEntries) {
       if (!entry.matched) {
         errors.push({
-          file: entry.originalName,
+          fileName: entry.originalName,
           error: 'No matching row in template found for this file',
         });
         failCount++;
@@ -410,6 +448,7 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
     // 6. Update batch status
     batch.successfulRows = successCount;
     batch.failedRows = failCount;
+    batch.successFiles = successFiles;
     batch.errorLog = errors;
     batch.status = failCount === batch.totalRows && batch.totalRows > 0 ? 'failed' : 'completed';
     await batch.save();
@@ -423,6 +462,7 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
       clientId,
       details: {
         batchCode: batch.batchCode,
+        batchName: batch.batchName,
         totalRows: batch.totalRows,
         successfulRows: successCount,
         failedRows: failCount,
@@ -442,14 +482,12 @@ const processInBackground = async (batch, templateFile, documentFiles, clientId,
  */
 const generateTemplate = () => {
   const headers = [
-    'loanNumber',
-    'folderCode',
-    'customerName',
-    'dispatchDate',
-    'podStatus',
-    'podDate',
-    'trackingNumber',
-    'remark',
+    'Loan Number',
+    'Folder',
+    'Customer Name',
+    'Dispatch Date',
+    'Tracking Number',
+    'Notice Type'
   ];
 
   const workbook = XLSX.utils.book_new();

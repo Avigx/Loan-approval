@@ -34,6 +34,7 @@ const uploadBatch = async (req, res, next) => {
       documentFiles,
       clientId,
       userId: req.user.id,
+      batchName: req.body.batchName || '',
     });
 
     res.status(202).json({

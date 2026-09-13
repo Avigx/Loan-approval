@@ -9,10 +9,11 @@ import {
   LogOut,
   FileText,
   Shield,
+  FolderOpen,
 } from 'lucide-react';
 
 const Sidebar = () => {
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isAdmin, isSuperAdmin } = useAuth();
   const navigate = useNavigate();
 
   const handleLogout = async () => {
@@ -32,6 +33,9 @@ const Sidebar = () => {
     ? [
         { to: '/users', icon: Users, label: 'Users' },
         { to: '/history', icon: Clock, label: 'History & Logs' },
+        ...(isSuperAdmin
+          ? [{ to: '/folders', icon: FolderOpen, label: 'Folders' }]
+          : []),
       ]
     : [];
 

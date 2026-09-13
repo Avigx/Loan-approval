@@ -12,6 +12,7 @@ import SearchPage from './pages/SearchPage';
 import BulkUploadPage from './pages/BulkUploadPage';
 import UsersPage from './pages/UsersPage';
 import HistoryLogPage from './pages/HistoryLogPage';
+import FoldersPage from './pages/FoldersPage';
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -86,6 +87,14 @@ function App() {
                 element={
                   <ProtectedRoute requiredRole={['SUPER_ADMIN', 'CLIENT_ADMIN']}>
                     <HistoryLogPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/folders"
+                element={
+                  <ProtectedRoute requiredRole={['SUPER_ADMIN']}>
+                    <FoldersPage />
                   </ProtectedRoute>
                 }
               />

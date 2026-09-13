@@ -1,5 +1,5 @@
 const Document = require('../models/Document');
-const FolderType = require('../models/FolderType');
+const Folder = require('../models/Folder');
 const storageService = require('../services/storage.service');
 const { scopeToClient } = require('../middleware/permissions.middleware');
 const { writeAuditLog, getClientIp } = require('../services/audit.service');
@@ -11,8 +11,8 @@ const { writeAuditLog, getClientIp } = require('../services/audit.service');
 const searchDocuments = async (req, res, next) => {
   try {
     const {
-      loanNumber, uniqueRef, customerName, folderCode,
-      trackingNumber, documentType, dispatchFrom, dispatchTo,
+      loanNumber, uniqueRef, customerName,
+      trackingNumber, folderCode, noticeType, dispatchFrom, dispatchTo,
       page = '1', limit = '50',
     } = req.query;
 
@@ -22,25 +22,15 @@ const searchDocuments = async (req, res, next) => {
     if (uniqueRef) filter.uniqueRef = { $regex: uniqueRef, $options: 'i' };
     if (customerName) filter.customerName = { $regex: customerName, $options: 'i' };
     if (trackingNumber) filter.trackingNumber = { $regex: trackingNumber, $options: 'i' };
+    
+    // Notice Type enum filter (notice, receipt, tracking)
+    if (noticeType) filter.noticeType = noticeType.toUpperCase();
 
     // Filter by folder code
     if (folderCode) {
-      const folderTypes = await FolderType.find({ folderCode: { $regex: folderCode, $options: 'i' } });
-      const folderTypeIds = folderTypes.map((ft) => ft._id);
-      filter.folderTypeId = { $in: folderTypeIds };
-    }
-
-    // Filter by document type (displayLabel on FolderType)
-    if (documentType) {
-      const folderTypes = await FolderType.find({ displayLabel: { $regex: documentType, $options: 'i' } });
-      const folderTypeIds = folderTypes.map((ft) => ft._id);
-      if (filter.folderTypeId) {
-        // Intersect with existing folder filter
-        const existingIds = filter.folderTypeId.$in.map(String);
-        filter.folderTypeId = { $in: folderTypeIds.filter((id) => existingIds.includes(String(id))) };
-      } else {
-        filter.folderTypeId = { $in: folderTypeIds };
-      }
+      const folders = await Folder.find({ code: { $regex: folderCode, $options: 'i' } });
+      const folderIds = folders.map((f) => f._id);
+      filter.folderId = { $in: folderIds };
     }
 
     // Dispatch date range
@@ -56,7 +46,7 @@ const searchDocuments = async (req, res, next) => {
 
     const [documents, total] = await Promise.all([
       Document.find(filter)
-        .populate('folderTypeId', 'folderCode displayLabel familyName variant')
+        .populate('folderId', 'code displayLabel name')
         .populate('clientId', 'name code')
         .sort({ createdAt: -1 })
         .skip(skip)
@@ -96,7 +86,7 @@ const viewDocument = async (req, res, next) => {
   try {
     const filter = { _id: req.params.id, ...scopeToClient(req) };
     const document = await Document.findOne(filter)
-      .populate('folderTypeId', 'folderCode displayLabel familyName variant')
+      .populate('folderId', 'code displayLabel name')
       .populate('clientId', 'name code');
 
     if (!document) {
@@ -171,17 +161,17 @@ const getStats = async (req, res, next) => {
         { $match: clientFilter.clientId ? { clientId: clientFilter.clientId } : {} },
         {
           $lookup: {
-            from: 'foldertypes',
-            localField: 'folderTypeId',
+            from: 'folders',
+            localField: 'folderId',
             foreignField: '_id',
-            as: 'folderType',
+            as: 'folder',
           },
         },
-        { $unwind: '$folderType' },
+        { $unwind: '$folder' },
         {
           $group: {
-            _id: '$folderType.folderCode',
-            displayLabel: { $first: '$folderType.displayLabel' },
+            _id: '$folder.code',
+            displayLabel: { $first: '$folder.displayLabel' },
             count: { $sum: 1 },
           },
         },
@@ -210,7 +200,7 @@ const getStats = async (req, res, next) => {
       totalBatches: stats.totalBatches,
       successfulRows: stats.successfulRows,
       failedRows: stats.failedRows,
-      folderCounts,
+      folderCounts, // Keep the key as folderCounts
     });
   } catch (error) {
     next(error);

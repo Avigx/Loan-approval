@@ -104,17 +104,17 @@ const DashboardPage = () => {
 
         {stats?.folderCounts?.length > 0 ? (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2">
-            {stats.folderCounts.map((folder) => (
+            {stats.folderCounts.map((nt) => (
               <div
-                key={folder._id}
+                key={nt._id}
                 className="flex items-center justify-between p-2.5 rounded-md bg-slate-50 border border-slate-200"
               >
                 <div className="min-w-0">
-                  <p className="text-xs font-medium text-slate-700 truncate">{folder.displayLabel || folder._id}</p>
-                  <p className="text-[10px] text-slate-400">{folder._id}</p>
+                  <p className="text-xs font-medium text-slate-700 truncate">{nt.displayLabel || nt._id}</p>
+                  <p className="text-[10px] text-slate-400">{nt._id}</p>
                 </div>
                 <span className="ml-2 bg-primary-100 text-primary-800 text-xs font-semibold px-2 py-0.5 rounded flex-shrink-0">
-                  {folder.count}
+                  {nt.count}
                 </span>
               </div>
             ))}
