@@ -2,7 +2,7 @@
   "rewrites": [
     {
       "source": "/api/:path*",
-      "destination": "https://legal-notice-dms-api.onrender.com/api/:path*"
+      "destination": "https://loan-approval-hev7.onrender.com/api/:path*"
     },
     {
       "source": "/(.*)",
