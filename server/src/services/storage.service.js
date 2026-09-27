@@ -1,40 +1,29 @@
 const fs = require('fs');
 const path = require('path');
+const {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  DeleteObjectCommand,
+} = require('@aws-sdk/client-s3');
 const env = require('../config/env');
 
 const STORAGE_BASE = path.resolve(__dirname, '../../storage');
 
-// Ensure storage directory exists
+// Ensure local storage directory exists
 if (!fs.existsSync(STORAGE_BASE)) {
   fs.mkdirSync(STORAGE_BASE, { recursive: true });
 }
 
 /**
- * Storage interface — local disk implementation.
- * Designed to be swapped for S3-compatible object storage in production
- * without touching calling code. To add S3:
- *   1. Create an S3StorageService with the same method signatures
- *   2. Switch the export based on env.STORAGE_MODE
- *
- * TODO: For production, implement S3StorageService using @aws-sdk/client-s3
+ * Local disk storage implementation.
  */
 class LocalStorageService {
-  /**
-   * Get the absolute path of a stored file.
-   * @param {string} relativePath - Path relative to storage base
-   * @returns {string}
-   */
   getAbsolutePath(relativePath) {
     return path.resolve(STORAGE_BASE, relativePath);
   }
 
-  /**
-   * Store a file (already written to disk by multer).
-   * Returns the relative path for DB storage.
-   * @param {object} file - Multer file object
-   * @param {string} subDir - Optional subdirectory (e.g. batch ID)
-   * @returns {{ relativePath: string, absolutePath: string, sizeBytes: number }}
-   */
   async storeFile(file, subDir = '') {
     const targetDir = subDir
       ? path.join(STORAGE_BASE, subDir)
@@ -44,7 +33,6 @@ class LocalStorageService {
       fs.mkdirSync(targetDir, { recursive: true });
     }
 
-    // Multer has already written the file; just return the paths
     const relativePath = subDir
       ? path.join(subDir, file.filename)
       : file.filename;
@@ -56,12 +44,6 @@ class LocalStorageService {
     };
   }
 
-  /**
-   * Move a file from its current multer location to a batch subdirectory.
-   * @param {object} file - Multer file object
-   * @param {string} subDir - Subdirectory name (e.g. batch code)
-   * @returns {{ relativePath: string, absolutePath: string, sizeBytes: number }}
-   */
   async moveToSubDir(file, subDir) {
     const targetDir = path.join(STORAGE_BASE, subDir);
     if (!fs.existsSync(targetDir)) {
@@ -78,32 +60,18 @@ class LocalStorageService {
     };
   }
 
-  /**
-   * Check if a file exists.
-   * @param {string} relativePath
-   * @returns {boolean}
-   */
   exists(relativePath) {
     return fs.existsSync(path.resolve(STORAGE_BASE, relativePath));
   }
 
-  /**
-   * Get a read stream for file download.
-   * @param {string} relativePath
-   * @returns {fs.ReadStream}
-   */
   getReadStream(relativePath) {
     const absPath = path.resolve(STORAGE_BASE, relativePath);
     if (!fs.existsSync(absPath)) {
-      throw new Error(`File not found: ${relativePath}`);
+      throw new Error(`File not found on local storage: ${relativePath}`);
     }
     return fs.createReadStream(absPath);
   }
 
-  /**
-   * Delete a stored file.
-   * @param {string} relativePath
-   */
   async deleteFile(relativePath) {
     const absPath = path.resolve(STORAGE_BASE, relativePath);
     if (fs.existsSync(absPath)) {
@@ -112,8 +80,230 @@ class LocalStorageService {
   }
 }
 
-// Export the appropriate implementation based on env
-// TODO: Add S3StorageService when STORAGE_MODE === 's3'
-const storageService = new LocalStorageService();
+/**
+ * S3-compatible cloud storage implementation (Cloudflare R2, Supabase Storage, AWS S3, etc.).
+ */
+class S3StorageService {
+  constructor() {
+    const clientConfig = {
+      region: env.S3_REGION || 'auto',
+    };
+
+    if (env.S3_ENDPOINT) {
+      clientConfig.endpoint = env.S3_ENDPOINT;
+    }
+
+    if (env.S3_ACCESS_KEY_ID && env.S3_SECRET_ACCESS_KEY) {
+      clientConfig.credentials = {
+        accessKeyId: env.S3_ACCESS_KEY_ID,
+        secretAccessKey: env.S3_SECRET_ACCESS_KEY,
+      };
+    }
+
+    if (env.S3_FORCE_PATH_STYLE) {
+      clientConfig.forcePathStyle = true;
+    }
+
+    this.client = new S3Client(clientConfig);
+    this.bucket = env.S3_BUCKET;
+  }
+
+  getAbsolutePath(relativePath) {
+    return null; // Not on local disk
+  }
+
+  formatKey(relativePath) {
+    return relativePath.replace(/\\/g, '/');
+  }
+
+  async storeFile(file, subDir = '') {
+    const relativePath = subDir
+      ? path.join(subDir, file.filename)
+      : file.filename;
+    const key = this.formatKey(relativePath);
+
+    const fileStream = fs.createReadStream(file.path);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: fileStream,
+        ContentType: file.mimetype || 'application/octet-stream',
+      })
+    );
+
+    // Clean up temporary multer upload file
+    try {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    } catch (_) {}
+
+    return {
+      relativePath,
+      absolutePath: null,
+      sizeBytes: file.size,
+    };
+  }
+
+  async moveToSubDir(file, subDir) {
+    const relativePath = path.join(subDir, file.filename);
+    const key = this.formatKey(relativePath);
+
+    const fileStream = fs.createReadStream(file.path);
+    await this.client.send(
+      new PutObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+        Body: fileStream,
+        ContentType: file.mimetype || 'application/octet-stream',
+      })
+    );
+
+    // Clean up temporary multer upload file
+    try {
+      if (fs.existsSync(file.path)) fs.unlinkSync(file.path);
+    } catch (_) {}
+
+    return {
+      relativePath,
+      absolutePath: null,
+      sizeBytes: file.size,
+    };
+  }
+
+  async exists(relativePath) {
+    try {
+      const key = this.formatKey(relativePath);
+      await this.client.send(
+        new HeadObjectCommand({
+          Bucket: this.bucket,
+          Key: key,
+        })
+      );
+      return true;
+    } catch (err) {
+      if (err.name === 'NotFound' || err.$metadata?.httpStatusCode === 404) {
+        return false;
+      }
+      console.warn(`[S3StorageService] Check file exists error for ${relativePath}:`, err.message);
+      return false;
+    }
+  }
+
+  async getReadStream(relativePath) {
+    const key = this.formatKey(relativePath);
+    const res = await this.client.send(
+      new GetObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      })
+    );
+    return res.Body; // In Node.js @aws-sdk/client-s3, res.Body is a readable stream
+  }
+
+  async deleteFile(relativePath) {
+    const key = this.formatKey(relativePath);
+    await this.client.send(
+      new DeleteObjectCommand({
+        Bucket: this.bucket,
+        Key: key,
+      })
+    );
+  }
+}
+
+/**
+ * Hybrid storage service: writes to local disk AND cloud bucket.
+ * Reads from local disk first if available, falls back to cloud.
+ */
+class HybridStorageService {
+  constructor(localService, s3Service) {
+    this.local = localService;
+    this.s3 = s3Service;
+  }
+
+  getAbsolutePath(relativePath) {
+    return this.local.getAbsolutePath(relativePath);
+  }
+
+  async storeFile(file, subDir = '') {
+    const localResult = await this.local.storeFile(file, subDir);
+    try {
+      const fileStream = fs.createReadStream(localResult.absolutePath);
+      const key = this.s3.formatKey(localResult.relativePath);
+      await this.s3.client.send(
+        new PutObjectCommand({
+          Bucket: this.s3.bucket,
+          Key: key,
+          Body: fileStream,
+          ContentType: file.mimetype || 'application/octet-stream',
+        })
+      );
+    } catch (err) {
+      console.warn(`[HybridStorage] Upload to cloud backup failed for ${localResult.relativePath}:`, err.message);
+    }
+    return localResult;
+  }
+
+  async moveToSubDir(file, subDir) {
+    const localResult = await this.local.moveToSubDir(file, subDir);
+    try {
+      const fileStream = fs.createReadStream(localResult.absolutePath);
+      const key = this.s3.formatKey(localResult.relativePath);
+      await this.s3.client.send(
+        new PutObjectCommand({
+          Bucket: this.s3.bucket,
+          Key: key,
+          Body: fileStream,
+          ContentType: file.mimetype || 'application/octet-stream',
+        })
+      );
+    } catch (err) {
+      console.warn(`[HybridStorage] Upload to cloud backup failed for ${localResult.relativePath}:`, err.message);
+    }
+    return localResult;
+  }
+
+  async exists(relativePath) {
+    if (this.local.exists(relativePath)) {
+      return true;
+    }
+    return await this.s3.exists(relativePath);
+  }
+
+  async getReadStream(relativePath) {
+    if (this.local.exists(relativePath)) {
+      return this.local.getReadStream(relativePath);
+    }
+    return await this.s3.getReadStream(relativePath);
+  }
+
+  async deleteFile(relativePath) {
+    await Promise.allSettled([
+      this.local.deleteFile(relativePath),
+      this.s3.deleteFile(relativePath),
+    ]);
+  }
+}
+
+// Select active storage service based on environment configuration
+let storageService;
+
+if (env.STORAGE_MODE === 's3') {
+  if (!env.S3_BUCKET) {
+    console.warn('⚠️ [Storage] STORAGE_MODE is "s3" but S3_BUCKET is not configured. Falling back to local storage.');
+    storageService = new LocalStorageService();
+  } else {
+    storageService = new S3StorageService();
+  }
+} else if (env.STORAGE_MODE === 'both') {
+  if (!env.S3_BUCKET) {
+    console.warn('⚠️ [Storage] STORAGE_MODE is "both" but S3_BUCKET is not configured. Using local storage until cloud credentials are set.');
+    storageService = new LocalStorageService();
+  } else {
+    storageService = new HybridStorageService(new LocalStorageService(), new S3StorageService());
+  }
+} else {
+  storageService = new LocalStorageService();
+}
 
 module.exports = storageService;

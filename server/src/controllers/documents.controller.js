@@ -123,7 +123,7 @@ const downloadDocument = async (req, res, next) => {
       return res.status(404).json({ error: 'Document not found' });
     }
 
-    if (!storageService.exists(document.filePath)) {
+    if (!await storageService.exists(document.filePath)) {
       return res.status(404).json({ error: 'File not found on storage' });
     }
 
@@ -137,7 +137,7 @@ const downloadDocument = async (req, res, next) => {
       ipAddress: getClientIp(req),
     });
 
-    const fileStream = storageService.getReadStream(document.filePath);
+    const fileStream = await storageService.getReadStream(document.filePath);
     const filename = `${document.uniqueRef}.${document.fileType}`;
 
     res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
@@ -278,7 +278,12 @@ const downloadBulk = async (req, res, next) => {
     }
 
     // Filter to only documents whose physical files exist
-    const validDocs = documents.filter((doc) => storageService.exists(doc.filePath));
+    const validDocs = [];
+    for (const doc of documents) {
+      if (await storageService.exists(doc.filePath)) {
+        validDocs.push(doc);
+      }
+    }
 
     if (validDocs.length === 0) {
       return res.status(404).json({ error: 'No downloadable files found on storage' });
@@ -305,7 +310,7 @@ const downloadBulk = async (req, res, next) => {
 
     // Add each valid document to the archive
     for (const doc of validDocs) {
-      const stream = storageService.getReadStream(doc.filePath);
+      const stream = await storageService.getReadStream(doc.filePath);
       const filename = `${doc.uniqueRef}.${doc.fileType}`;
       archive.append(stream, { name: filename });
     }

@@ -13,7 +13,13 @@ const env = {
   JWT_REFRESH_EXPIRY: process.env.JWT_REFRESH_EXPIRY || '7d',
   CLIENT_URL: process.env.CLIENT_URL || 'http://localhost:5173',
   EMAIL_PROVIDER: process.env.EMAIL_PROVIDER || 'stub',
-  STORAGE_MODE: process.env.STORAGE_MODE || 'local',
+  STORAGE_MODE: process.env.STORAGE_MODE || 'local', // 'local' | 's3' | 'both'
+  S3_ENDPOINT: process.env.S3_ENDPOINT || null,
+  S3_BUCKET: process.env.S3_BUCKET || null,
+  S3_REGION: process.env.S3_REGION || 'auto',
+  S3_ACCESS_KEY_ID: process.env.S3_ACCESS_KEY_ID || process.env.S3_ACCESS_KEY || null,
+  S3_SECRET_ACCESS_KEY: process.env.S3_SECRET_ACCESS_KEY || process.env.S3_SECRET_KEY || null,
+  S3_FORCE_PATH_STYLE: process.env.S3_FORCE_PATH_STYLE === 'true',
   MAX_FILE_SIZE: parseInt(process.env.MAX_FILE_SIZE || '26214400', 10), // 25MB
   NODE_ENV: process.env.NODE_ENV || 'development',
 };
